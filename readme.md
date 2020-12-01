@@ -17,11 +17,11 @@
 
 #### 使用方法：
 
-1. 命令行直接运行
+1. 命令行直接运行  
 `python dmbot.py {房间号} -dl(可选)`  
 默认不启动弹幕文件及封面下载，在最后输入`-dl`后开启。
 
-2. 继承重写方法
+2. 继承重写方法  
 Class: `Client`  
 function: 
     - `async def do_danmaku(self, data)` : 需要返回`ts`发送时间, `uid`用户ID, `text`文本， 用于写入xml文件。
