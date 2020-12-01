@@ -1,8 +1,11 @@
 # danmaku bot
+
 ---
+
 使用websocket异步方法获取B站直播弹幕、SC、礼物等消息
 
 #### 功能：
+
 - 解析websocket服务器消息
 - 自动检测开播状态
 - 支持房间号短ID
@@ -13,11 +16,17 @@
 ---
 
 #### 使用方法：
+
 1. 命令行直接运行
+
 `python dmbot.py {房间号} -dl(可选)`
+
 默认不启动弹幕文件及封面下载，在最后输入`-dl`后开启。
+
 2. 继承重写方法
+
 Class: `Client`
+
 function: 
     - `async def do_danmaku(self, data)` : 需要返回`ts`发送时间, `uid`用户ID, `text`文本， 用于写入xml文件。
     - `async def do_SC(self, data)`
