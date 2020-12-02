@@ -27,6 +27,17 @@ HEADER = {
     "Accept-language": "zh-CN,zh;q=0.9,en;q=0.8,ja;q=0.7,en-GB;q=0.6,en-US;q=0.5",
 }
 
+XML_FRAME = '''<?xml version='1.0' encoding='UTF-8'?>
+<i>
+<chatserver>chat.bilibili.com</chatserver>
+<chatid>114514</chatid>
+<mission>0</mission>
+<maxlimit>100000</maxlimit>
+<state>0</state>
+<real_name>0</real_name>
+<source>k-v</source>
+</i>'''
+
 class VER:
     JSON = 0
     INT = 1
@@ -63,26 +74,25 @@ def pack(data, operation):
     )
     return header + body
 
-def toXml(time, ts, uid, text):
-    return f'<d p="{time},1,25,16777215,{ts},0,{uid},0">{text}</d>\n'
-
-
 class Clint:
-    def __init__(self, roomid, download=False, update_interval=3, heartbeat_interval=30):
+    def __init__(self, roomid, download=False, trans=False, update_interval=3, heartbeat_interval=30):
         self._roomid = int(roomid)
         self.download = download
+        self.trans = trans
         self.update_interval = update_interval
         self.heartbeat_interval = heartbeat_interval
         self.hot = 0
-        try:
-            self.getRoomInfo()
-        except:
-            print("Error when getting room info.")
+        self.xml_path = f'{PATH}/{DANMAKU_FILE}/'
+        self.cover_path = f'{PATH}/{COVER_FILE}/'
         if download == True:
             if not os.path.exists(self.xml_path):
                 os.mkdir(self.xml_path)
             if not os.path.exists(self.cover_path):
                 os.mkdir(self.cover_path)
+        try:
+            self.getRoomInfo()
+        except:
+            print("Error when getting room info.")
 
 
     def start(self):
@@ -110,6 +120,7 @@ class Clint:
                 print("! Timeout.")
                 retry = retry + 1
                 await asyncio.sleep(1)
+                continue
             except BaseException as e:
                 print(e)
                 break
@@ -124,22 +135,17 @@ class Clint:
         self.cover = roomInfo["cover"]
         self.start_time = roomInfo["live_start_time"] 
         self.file_name = '[' + str(self._roomid) + ']' + _time.strftime("%Y.%m.%d %H-%M-%S", _time.localtime(self.start_time))
-        self.xml_path = f'{PATH}/{DANMAKU_FILE}/'
-        self.cover_path = f'{PATH}/{COVER_FILE}/'
-        # write xml header and cover
-        try:
-            if self.download and self.live_sataus:
-                if not os.path.exists(self.xml_path + self.file_name + '.xml'):
-                    # xml header
-                    f = open(self.xml_path + self.file_name + '.xml', "w", encoding="utf-8")
-                    f.write("<?xml version='1.0' encoding='UTF-8'?><i><chatserver>chat.bilibili.com</chatserver><chatid>114514</chatid><mission>0</mission><maxlimit>100000</maxlimit><state>0</state><real_name>0</real_name><source>k-v</source>\n")
-                    f.close()
-                if not os.path.exists(self.cover_path + self.file_name + '.png'):
-                    # cover
-                    r = requests.get(self.cover, headers=HEADER)
-                    open(self.cover_path + self.file_name + '.png', "wb").write(r.content)
-        except IOError as e:
-            print(e)
+        # write xml frame and cover
+        if self.download and self.live_sataus:
+            if not os.path.exists(self.xml_path + self.file_name + '.xml'):
+                # xml frame
+                with open(self.xml_path + self.file_name + '.xml', "w", encoding="utf-8") as f:
+                    f.write(XML_FRAME)
+            if not os.path.exists(self.cover_path + self.file_name + '.png'):
+                # cover
+                r = requests.get(self.cover, headers=HEADER)
+                with open(self.cover_path + self.file_name + '.png', "wb") as f:
+                    f.write(r.content)
 
     async def updateRoomInfo(self):
         while True:
@@ -206,14 +212,12 @@ class Clint:
                 # 弹幕
                 if body['cmd'] == "DANMU_MSG":
                     ts, uid, text = await self.do_danmaku(body["info"])
-                    if self.live_sataus and self.download:
-                        try:
-                            context = toXml(ts-self.start_time, ts, uid, text)
-                            f = open(self.xml_path + self.file_name + '.xml', "a", encoding="utf-8")
-                            f.write(context)
-                            f.close()
-                        except IOError as e:
-                            print(e)
+                    if self.live_sataus:
+                        if self.download:
+                            await self.dl_danmaku(ts-self.start_time, ts, uid, text)
+                        if self.trans:
+                            await self.dl_trans(ts-self.start_time, ts, uid, text)
+
                 # SC
                 elif body['cmd'] == "SUPER_CHAT_MESSAGE":
                     await self.do_SC(body["data"])
@@ -243,6 +247,23 @@ class Clint:
         else:
             #print(body)
             pass
+    
+    async def dl_danmaku(self, time, ts, uid, text):
+        with open(self.xml_path + self.file_name + '.xml', "r", encoding="utf-8") as f:
+            res = f.read()
+            context = res[:-4] + f'<d p="{time},1,25,16777215,{ts},0,{uid},0">{text}</d>\n</i>'
+            with open(self.xml_path + self.file_name + '.xml', "w", encoding="utf-8") as f:
+                f.write(context)
+
+    async def dl_trans(self, time, ts, uid, text):
+        if text[0] == "【" and text[-1] == "】":
+            ts = _time.strftime("%H:%M:%S", _time.localtime(ts))
+            m, s = divmod(int(time), 60)
+            h, m = divmod(m, 60)
+            time = str("%d:%02d:%02d" % (h, m, int(s)))
+            with open(self.xml_path + self.file_name + ".txt", "a", encoding="utf-8") as f:
+                context = "[{}][{}]{} ({})\n".format(ts, time, text, uid)
+                f.write(context)
 
     async def do_danmaku(self, data):
         text = data[1]
@@ -302,15 +323,11 @@ class Clint:
         pass
 
 if __name__ == "__main__":
-    try:
-        params = sys.argv[1:]
-        if len(params) == 2:
-            dl = True if params[1] == "-dl" else False
-            clint = Clint(params[0], download=dl)
-        elif len(params) == 1:
-            clint = Clint(params[0])
-        else:
-            raise Exception("Params Error")
-        clint.start()
-    except RuntimeError as e:
-        print(e)
+    params = sys.argv[1:]
+    if len(params) > 0:
+        dl = True if "-dl" in params else False
+        trans = True if "-tr" in params else False
+        clint = Clint(params[0], download=dl, trans=trans)
+    else:
+        raise Exception("Params Error")
+    clint.start()
