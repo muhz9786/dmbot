@@ -117,7 +117,7 @@ class Clint:
                     ]
                     await asyncio.wait(tasks)
             except asyncio.TimeoutError:
-                print("! Timeout.")
+                print("Timeout.")
                 retry = retry + 1
                 await asyncio.sleep(1)
                 continue
@@ -285,17 +285,17 @@ class Clint:
         user = data["user_info"]["uname"]
         price = data["price"]
         msg = data["message"]
+        msg_JPN = ""
         if data.__contains__("message_trans"):
             if data["message_trans"] != "":
-                msg_JPN = f'({data["message_trans"]})' + '\n'
+                msg_JPN = f'| ({data["message_trans"]})' + '\n'
         #elif data.__contains__("message_jpn"):
             #msg_JPN = f'({data["message_jpn"]})'
-        else:
-            msg_JPN = ""
+        
         #time = data["time"]  # duration(second)
         #start_time = data["start_time"]
         #end_time = data["end_time"]
-        print(f'[￥{price}]\n{msg}\n{msg_JPN}.by {user}')
+        print(f'[￥{price}]\n| {msg}\n{msg_JPN}| .by {user}')
 
     async def do_buy_guard(self, data):
         uid = data["uid"]
