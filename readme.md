@@ -33,3 +33,9 @@ function:
     - `async def do_welcome_guard(self, data)`
     - `async def do_heartbreak_reply(self, data)`
     - `async def do_auth_reply(self, data)`
+
+---
+
+#### 示例
+
+![ ](https://github.com/muhz9786/dmbot/blob/master/sample.png)

@@ -215,8 +215,8 @@ class Clint:
                     if self.live_sataus:
                         if self.download:
                             await self.dl_danmaku(ts-self.start_time, ts, uid, text)
-                        if self.trans:
-                            await self.dl_trans(ts-self.start_time, ts, uid, text)
+                        if self.trans and self.isTrans(text):
+                            await self.do_trans(ts-self.start_time, ts, uid, text)
 
                 # SC
                 elif body['cmd'] == "SUPER_CHAT_MESSAGE":
@@ -256,14 +256,13 @@ class Clint:
                 f.write(context)
 
     async def dl_trans(self, time, ts, uid, text):
-        if text[0] == "【" and text[-1] == "】":
-            ts = _time.strftime("%H:%M:%S", _time.localtime(ts))
-            m, s = divmod(int(time), 60)
-            h, m = divmod(m, 60)
-            time = str("%d:%02d:%02d" % (h, m, int(s)))
-            with open(self.xml_path + self.file_name + ".txt", "a", encoding="utf-8") as f:
-                context = "[{}][{}]{} ({})\n".format(ts, time, text, uid)
-                f.write(context)
+        ts = _time.strftime("%H:%M:%S", _time.localtime(ts))
+        m, s = divmod(int(time), 60)
+        h, m = divmod(m, 60)
+        time = str("%d:%02d:%02d" % (h, m, int(s)))
+        with open(self.xml_path + self.file_name + ".txt", "a", encoding="utf-8") as f:
+            context = "[{}][{}]{} ({})\n".format(ts, time, text, uid)
+            f.write(context)
 
     async def do_danmaku(self, data):
         text = data[1]
@@ -272,6 +271,12 @@ class Clint:
         ts = data[9]["ts"]  # timestamp
         print(f'- {user}: {text}')
         return ts, uid, text
+
+    def isTrans(self, text):
+        return True if text[0] == "【" and text[-1] == "】" else False
+
+    async def do_trans(self, time, ts, uid, text):
+        await self.dl_trans(time, ts, uid, text)
 
     async def do_SC(self, data):
         SCid = data["id"]
