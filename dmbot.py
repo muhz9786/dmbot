@@ -159,11 +159,12 @@ class Clint:
 
     def getHostList(self):
         try:
-            url = DANMU_INFO + str(roomid)
+            url = DANMU_INFO + str(self.roomid)
             r = requests.get(url, headers=HEADER)
             self.host_list = json.loads(r.text)["data"]["host_list"]
             self.token = json.loads(r.text)["data"]["token"]
         except:
+            print("Getting host list failed.")
             self.host_list = [DEFAULT_HOST]
             self.token = None
 
@@ -294,7 +295,7 @@ class Clint:
         #time = data["time"]  # duration(second)
         #start_time = data["start_time"]
         #end_time = data["end_time"]
-        print(f'[￥{price}] {msg}\n    {msg_JPN}    .by {user}')
+        print(f'[￥{price}]\n{msg}\n{msg_JPN}.by {user}')
 
     async def do_buy_guard(self, data):
         uid = data["uid"]
