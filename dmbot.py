@@ -9,9 +9,7 @@ import os
 import sys
 
 STRUCT = struct.Struct(">I2H2I")
-PATH = "./"
-DANMAKU_FILE = "danmaku"
-COVER_FILE = "cover"
+PATH = "./download"
 DANMU_INFO = "https://api.live.bilibili.com/xlive/web-room/v1/index/getDanmuInfo?id="
 ROOM_INFO = "https://api.live.bilibili.com/xlive/web-room/v1/index/getInfoByRoom?room_id="
 DEFAULT_HOST = {"host": "broadcastlv.chat.bilibili.com", "wss_port": "443"}
@@ -75,32 +73,31 @@ def pack(data, operation):
     return header + body
 
 class Clint:
-    def __init__(self, roomid, download=False, trans=False, update_interval=3, heartbeat_interval=30):
+    def __init__(self, roomid, download=False, update_interval=3, heartbeat_interval=30):
         self._roomid = int(roomid)
         self.download = download
-        self.trans = trans
         self.update_interval = update_interval
         self.heartbeat_interval = heartbeat_interval
-        self.hot = 0
-        self.xml_path = f'{PATH}/{DANMAKU_FILE}/'
-        self.cover_path = f'{PATH}/{COVER_FILE}/'
-        if download == True:
-            if not os.path.exists(self.xml_path):
-                os.mkdir(self.xml_path)
-            if not os.path.exists(self.cover_path):
-                os.mkdir(self.cover_path)
         try:
             self.getRoomInfo()
         except:
-            print("Error when getting room info.")
-
+            print("Getting room info failed.")
+            sys.exit()
+        self.hot = 0
+        self.path = f'{PATH}/{self._roomid}/'
+        if self.download == True:
+            if not os.path.exists(PATH):
+                os.mkdir(PATH)
+            if not os.path.exists(self.path):
+                os.mkdir(self.path)
 
     def start(self):
         self.getHostList()
         try:
+            print("··· startup ···")
             asyncio.get_event_loop().run_until_complete(self.loop())
         except KeyboardInterrupt:
-            print("exit.")
+            print("··· exit ···")
 
     async def loop(self):
         retry = 0
@@ -118,9 +115,12 @@ class Clint:
                     await asyncio.wait(tasks)
             except asyncio.TimeoutError:
                 print("Timeout.")
-                retry = retry + 1
-                await asyncio.sleep(1)
+                retry = retry + 1 if retry < len(self.host_list)-1 else 0 
+                await asyncio.sleep(3)
                 continue
+            except websockets.exceptions.ConnectionClosedError:
+                print("Connection closed.")
+                self.start()
             except BaseException as e:
                 print(e)
                 break
@@ -134,17 +134,21 @@ class Clint:
         self.title = roomInfo["title"]
         self.cover = roomInfo["cover"]
         self.start_time = roomInfo["live_start_time"] 
-        self.file_name = '[' + str(self._roomid) + ']' + _time.strftime("%Y.%m.%d %H-%M-%S", _time.localtime(self.start_time))
+        self.dir = f'[{_time.strftime("%Y.%m.%d %H-%M-%S", _time.localtime(self.start_time))}]{self.title}'
+        self.file_name = f'[{_time.strftime("%Y.%m.%d", _time.localtime(self.start_time))}]{self.title}'
         # write xml frame and cover
         if self.download and self.live_sataus:
-            if not os.path.exists(self.xml_path + self.file_name + '.xml'):
+            if not os.path.exists(f'{self.path}/{self.dir}'):
+                # make dir of live
+                os.mkdir(f'{self.path}/{self.dir}')
+            if not os.path.exists(f'{self.path}/{self.dir}/{self.file_name}.xml'):
                 # xml frame
-                with open(self.xml_path + self.file_name + '.xml', "w", encoding="utf-8") as f:
+                with open(f'{self.path}/{self.dir}/{self.file_name}.xml', "w", encoding="utf-8") as f:
                     f.write(XML_FRAME)
-            if not os.path.exists(self.cover_path + self.file_name + '.png'):
+            if not os.path.exists(f'{self.path}/{self.dir}/{self.file_name}.jpg'):
                 # cover
                 r = requests.get(self.cover, headers=HEADER)
-                with open(self.cover_path + self.file_name + '.png', "wb") as f:
+                with open(f'{self.path}/{self.dir}/{self.file_name}.jpg', "wb") as f:
                     f.write(r.content)
 
     async def updateRoomInfo(self):
@@ -153,9 +157,11 @@ class Clint:
                 self.getRoomInfo()
                 await asyncio.sleep(self.update_interval)
             except (requests.exceptions.ProxyError, requests.exceptions.ChunkedEncodingError):
-                print("ConnectError in getting room info.")
+                print("ConnectionError when updating room info.")
                 await asyncio.sleep(3)
                 self.getRoomInfo()
+            except requests.exceptions.ConnectionError:
+                break
 
     def getHostList(self):
         try:
@@ -183,16 +189,22 @@ class Clint:
 
     async def sendHeartBeat(self):
         while True:
-            await self.websocket.send(bytes(pack({}, OPERATION.HEARTBEAT)))
+            try:
+                await self.websocket.send(bytes(pack({}, OPERATION.HEARTBEAT)))
+            except websockets.exceptions.ConnectionClosedError:
+                break
             await asyncio.sleep(self.heartbeat_interval)
 
     async def getMessage(self):
         while True:
-            msg = await self.websocket.recv()
+            try:
+                msg = await self.websocket.recv()
+            except websockets.exceptions.ConnectionClosedError:
+                break
             await self.handelMsg(msg)
 
     async def handelMsg(self, msg):
-        packetLength, headerLength, ver, operation, seqId = STRUCT.unpack_from(msg, 0)
+        packetLength, headerLength, ver, operation, _seqId = STRUCT.unpack_from(msg, 0)
         
         # 数据包相连时
         if packetLength < len(msg):
@@ -216,8 +228,10 @@ class Clint:
                     if self.live_sataus:
                         if self.download:
                             await self.dl_danmaku(ts-self.start_time, ts, uid, text)
-                        if self.trans and self.isTrans(text):
-                            await self.do_trans(ts-self.start_time, ts, uid, text)
+                        if self.isTrans(text):
+                            tr_time, tr_ts, tr_uid, tr_text = await self.do_trans(ts-self.start_time, ts, uid, text)
+                            if self.download:
+                                await self.dl_trans(tr_time, tr_ts, tr_uid, tr_text)
 
                 # SC
                 elif body['cmd'] == "SUPER_CHAT_MESSAGE":
@@ -250,10 +264,10 @@ class Clint:
             pass
     
     async def dl_danmaku(self, time, ts, uid, text):
-        with open(self.xml_path + self.file_name + '.xml', "r", encoding="utf-8") as f:
+        with open(f'{self.path}/{self.dir}/{self.file_name}.xml', "r", encoding="utf-8") as f:
             res = f.read()
             context = res[:-4] + f'<d p="{time},1,25,16777215,{ts},0,{uid},0">{text}</d>\n</i>'
-            with open(self.xml_path + self.file_name + '.xml', "w", encoding="utf-8") as f:
+            with open(f'{self.path}/{self.dir}/{self.file_name}.xml', "w", encoding="utf-8") as f:
                 f.write(context)
 
     async def dl_trans(self, time, ts, uid, text):
@@ -261,7 +275,7 @@ class Clint:
         m, s = divmod(int(time), 60)
         h, m = divmod(m, 60)
         time = str("%d:%02d:%02d" % (h, m, int(s)))
-        with open(self.xml_path + self.file_name + ".txt", "a", encoding="utf-8") as f:
+        with open(f'{self.path}/{self.dir}/{self.file_name}.txt', "a", encoding="utf-8") as f:
             context = "[{}][{}]{} ({})\n".format(ts, time, text, uid)
             f.write(context)
 
@@ -277,11 +291,11 @@ class Clint:
         return True if text[0] == "【" and text[-1] == "】" else False
 
     async def do_trans(self, time, ts, uid, text):
-        await self.dl_trans(time, ts, uid, text)
+        return time, ts, uid, text
 
     async def do_SC(self, data):
-        SCid = data["id"]
-        uid = data["uid"]
+        #SCid = data["id"]
+        #uid = data["uid"]
         user = data["user_info"]["uname"]
         price = data["price"]
         msg = data["message"]
@@ -289,8 +303,6 @@ class Clint:
         if data.__contains__("message_trans"):
             if data["message_trans"] != "":
                 msg_JPN = f'| ({data["message_trans"]})' + '\n'
-        #elif data.__contains__("message_jpn"):
-            #msg_JPN = f'({data["message_jpn"]})'
         
         #time = data["time"]  # duration(second)
         #start_time = data["start_time"]
@@ -298,17 +310,17 @@ class Clint:
         print(f'[￥{price}]\n| {msg}\n{msg_JPN}| .by {user}')
 
     async def do_buy_guard(self, data):
-        uid = data["uid"]
+        #uid = data["uid"]
         user = data["username"]
         gift = data["gift_name"]
         print(f'[Member({gift})] by {user}')
 
     async def do_gift(self, data):
-        uid = data["uid"]
+        #uid = data["uid"]
         user = data["uname"]
-        price = data["price"]
+        #price = data["price"]
         gift = data["giftName"]
-        time = data["timestamp"]
+        #time = data["timestamp"]
         num = data["num"]
         print(f'[{gift}] X {num} by {user}')
 
@@ -332,8 +344,7 @@ if __name__ == "__main__":
     params = sys.argv[1:]
     if len(params) > 0:
         dl = True if "-dl" in params else False
-        trans = True if "-tr" in params else False
-        clint = Clint(params[0], download=dl, trans=trans)
+        clint = Clint(params[0], download=dl)
     else:
         raise Exception("Params Error")
     clint.start()
