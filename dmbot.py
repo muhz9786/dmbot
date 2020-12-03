@@ -7,6 +7,7 @@ import struct
 import time as _time
 import os
 import sys
+import re
 
 STRUCT = struct.Struct(">I2H2I")
 PATH = "./download"
@@ -80,16 +81,11 @@ class Clint:
         self.heartbeat_interval = heartbeat_interval
         try:
             self.getRoomInfo()
-        except:
+        except BaseException as e:
             print("Getting room info failed.")
+            print(e)
             sys.exit()
-        self.hot = 0
-        self.path = f'{PATH}/{self._roomid}/'
-        if self.download == True:
-            if not os.path.exists(PATH):
-                os.mkdir(PATH)
-            if not os.path.exists(self.path):
-                os.mkdir(self.path)
+
 
     def start(self):
         self.getHostList()
@@ -128,28 +124,39 @@ class Clint:
     def getRoomInfo(self):
         url = ROOM_INFO + str(self._roomid)
         r = requests.get(url, headers=HEADER)
-        roomInfo = json.loads(r.text)["data"]["room_info"]
+        data = json.loads(r.text)["data"]
+        self.name = data["anchor_info"]["base_info"]["uname"]
+        roomInfo = data["room_info"]
         self.live_sataus = roomInfo["live_status"]
         self.roomid = roomInfo["room_id"]
         self.title = roomInfo["title"]
         self.cover = roomInfo["cover"]
         self.start_time = roomInfo["live_start_time"] 
+        self.hot = 0
+
+        self.path = f'{PATH}/{self.name}({self._roomid})/'
         self.dir = f'[{_time.strftime("%Y.%m.%d %H-%M-%S", _time.localtime(self.start_time))}]{self.title}'
         self.file_name = f'[{_time.strftime("%Y.%m.%d", _time.localtime(self.start_time))}]{self.title}'
-        # write xml frame and cover
-        if self.download and self.live_sataus:
-            if not os.path.exists(f'{self.path}/{self.dir}'):
-                # make dir of live
-                os.mkdir(f'{self.path}/{self.dir}')
-            if not os.path.exists(f'{self.path}/{self.dir}/{self.file_name}.xml'):
-                # xml frame
-                with open(f'{self.path}/{self.dir}/{self.file_name}.xml', "w", encoding="utf-8") as f:
-                    f.write(XML_FRAME)
-            if not os.path.exists(f'{self.path}/{self.dir}/{self.file_name}.jpg'):
-                # cover
-                r = requests.get(self.cover, headers=HEADER)
-                with open(f'{self.path}/{self.dir}/{self.file_name}.jpg', "wb") as f:
-                    f.write(r.content)
+
+        if self.download:
+            if not os.path.exists(PATH):
+                os.mkdir(PATH)
+            if not os.path.exists(self.path):
+                os.mkdir(self.path)
+            # write xml frame and cover
+            if self.live_sataus:
+                if not os.path.exists(f'{self.path}/{self.dir}'):
+                    # make dir of live
+                    os.mkdir(f'{self.path}/{self.dir}')
+                if not os.path.exists(f'{self.path}/{self.dir}/{self.file_name}.xml'):
+                    # xml frame
+                    with open(f'{self.path}/{self.dir}/{self.file_name}.xml', "w", encoding="utf-8") as f:
+                        f.write(XML_FRAME)
+                if not os.path.exists(f'{self.path}/{self.dir}/{self.file_name}.jpg'):
+                    # cover
+                    r = requests.get(self.cover, headers=HEADER)
+                    with open(f'{self.path}/{self.dir}/{self.file_name}.jpg', "wb") as f:
+                        f.write(r.content)
 
     async def updateRoomInfo(self):
         while True:
@@ -288,7 +295,11 @@ class Clint:
         return ts, uid, text
 
     def isTrans(self, text):
-        return True if text[0] == "【" and text[-1] == "】" else False
+        mark = [
+            ("「", "」"), 
+            ("【", "】"), 
+            ]
+        return True if (text[0], text[-1]) in mark else False
 
     async def do_trans(self, time, ts, uid, text):
         return time, ts, uid, text
