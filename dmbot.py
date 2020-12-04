@@ -11,8 +11,8 @@ import re
 
 STRUCT = struct.Struct(">I2H2I")
 PATH = "./download"
-DANMU_INFO = "https://api.live.bilibili.com/xlive/web-room/v1/index/getDanmuInfo?id="
-ROOM_INFO = "https://api.live.bilibili.com/xlive/web-room/v1/index/getInfoByRoom?room_id="
+DANMU_INFO = "http://api.live.bilibili.com/xlive/web-room/v1/index/getDanmuInfo?id="
+ROOM_INFO = "http://api.live.bilibili.com/xlive/web-room/v1/index/getInfoByRoom?room_id="
 DEFAULT_HOST = {"host": "broadcastlv.chat.bilibili.com", "wss_port": "443"}
 
 HEADER = {
@@ -83,23 +83,23 @@ class Clint:
             self.getRoomInfo()
         except BaseException as e:
             print("Getting room info failed.")
-            print(e)
             sys.exit()
 
 
     def start(self):
-        self.getHostList()
         try:
             print("··· startup ···")
-            asyncio.get_event_loop().run_until_complete(self.loop())
+            loop = asyncio.get_event_loop()
+            loop.run_until_complete(self.loop())
         except KeyboardInterrupt:
             print("··· exit ···")
+            loop.stop()
 
     async def loop(self):
-        retry = 0
         while True:
+            self.getHostList()
             try:
-                host = self.host_list[retry]
+                host = self.host_list[0]
                 async with websockets.connect(f'wss://{host["host"]}:{host["wss_port"]}/sub') as websocket:
                     self.websocket = websocket
                     await self.sendEnterMsg()
@@ -108,18 +108,15 @@ class Clint:
                         self.updateRoomInfo(),
                         self.sendHeartBeat(),
                     ]
-                    await asyncio.wait(tasks)
-            except asyncio.TimeoutError:
-                print("Timeout.")
-                retry = retry + 1 if retry < len(self.host_list)-1 else 0 
-                await asyncio.sleep(3)
-                continue
-            except websockets.exceptions.ConnectionClosedError:
-                print("Connection closed.")
-                self.start()
-            except BaseException as e:
+                    await asyncio.gather(*tasks)
+            except RuntimeError as e:
                 print(e)
                 break
+            except:
+                print("Reconnecting...")
+                await self.websocket.close()
+                await asyncio.sleep(3)
+                continue
 
     def getRoomInfo(self):
         url = ROOM_INFO + str(self._roomid)
@@ -167,8 +164,6 @@ class Clint:
                 print("ConnectionError when updating room info.")
                 await asyncio.sleep(3)
                 self.getRoomInfo()
-            except requests.exceptions.ConnectionError:
-                break
 
     def getHostList(self):
         try:
@@ -196,18 +191,12 @@ class Clint:
 
     async def sendHeartBeat(self):
         while True:
-            try:
-                await self.websocket.send(bytes(pack({}, OPERATION.HEARTBEAT)))
-            except websockets.exceptions.ConnectionClosedError:
-                break
+            await self.websocket.send(bytes(pack({}, OPERATION.HEARTBEAT)))
             await asyncio.sleep(self.heartbeat_interval)
 
     async def getMessage(self):
         while True:
-            try:
-                msg = await self.websocket.recv()
-            except websockets.exceptions.ConnectionClosedError:
-                break
+            msg = await self.websocket.recv()
             await self.handelMsg(msg)
 
     async def handelMsg(self, msg):
@@ -296,10 +285,10 @@ class Clint:
 
     def isTrans(self, text):
         mark = [
-            ("「", "」"), 
-            ("【", "】"), 
+            "「", 
+            "【", 
             ]
-        return True if (text[0], text[-1]) in mark else False
+        return True if text[0] in mark else False
 
     async def do_trans(self, time, ts, uid, text):
         return time, ts, uid, text
