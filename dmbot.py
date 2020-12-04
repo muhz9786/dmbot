@@ -81,7 +81,7 @@ class Clint:
         self.heartbeat_interval = heartbeat_interval
         try:
             self.getRoomInfo()
-        except BaseException as e:
+        except:
             print("Getting room info failed.")
             sys.exit()
 
@@ -114,16 +114,15 @@ class Clint:
                 break
             except:
                 print("Reconnecting...")
-                await self.websocket.close()
                 await asyncio.sleep(3)
                 continue
 
     def getRoomInfo(self):
         url = ROOM_INFO + str(self._roomid)
-        r = requests.get(url, headers=HEADER)
-        data = json.loads(r.text)["data"]
+        with requests.get(url, headers=HEADER) as r:
+            data = json.loads(r.text)["data"]
+            roomInfo = data["room_info"]
         self.name = data["anchor_info"]["base_info"]["uname"]
-        roomInfo = data["room_info"]
         self.live_sataus = roomInfo["live_status"]
         self.roomid = roomInfo["room_id"]
         self.title = roomInfo["title"]
@@ -151,9 +150,9 @@ class Clint:
                         f.write(XML_FRAME)
                 if not os.path.exists(f'{self.path}/{self.dir}/{self.file_name}.jpg'):
                     # cover
-                    r = requests.get(self.cover, headers=HEADER)
-                    with open(f'{self.path}/{self.dir}/{self.file_name}.jpg', "wb") as f:
-                        f.write(r.content)
+                    with requests.get(self.cover, headers=HEADER) as r:
+                        with open(f'{self.path}/{self.dir}/{self.file_name}.jpg', "wb") as f:
+                            f.write(r.content)
 
     async def updateRoomInfo(self):
         while True:
@@ -168,9 +167,9 @@ class Clint:
     def getHostList(self):
         try:
             url = DANMU_INFO + str(self.roomid)
-            r = requests.get(url, headers=HEADER)
-            self.host_list = json.loads(r.text)["data"]["host_list"]
-            self.token = json.loads(r.text)["data"]["token"]
+            with requests.get(url, headers=HEADER) as r:
+                self.host_list = json.loads(r.text)["data"]["host_list"]
+                self.token = json.loads(r.text)["data"]["token"]
         except:
             print("Getting host list failed.")
             self.host_list = [DEFAULT_HOST]
@@ -332,9 +331,9 @@ class Clint:
 
     async def do_heartbreak_reply(self, data):
         hot = int.from_bytes(data, 'big')
-        if self.hot:
-            if hot / 1000000 > 1 and (hot / 1000000 - int(self.hot / 1000000)) >= 1:
-                print(f'[int({hot}/1000000)*1000000 人气达成]')
+        if self.hot > 0:
+            if hot / 500000 > 1 and (hot / 500000 - int(self.hot / 500000)) >= 1:
+                print(f'[{int(hot/500000)*50}万 人气达成]')
         self.hot = hot
 
     async def do_auth_reply(self, data):
